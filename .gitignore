@@ -1,0 +1,11 @@
+.venv/
+.local/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+rubric_*.json
+
+.env.*
+!.env.example
+*.log

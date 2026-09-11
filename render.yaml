@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: rubric-workbench
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PUBLIC_DEPLOYMENT
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.11.9"

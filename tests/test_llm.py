@@ -10,8 +10,57 @@ from rubric_tool.llm import (
     create_client,
     extract_json_object,
     normalize_base_url,
+    validate_benchmark_markdown,
 )
 from rubric_tool.schemas import Rubric
+
+
+FULL_SCORE_GUIDE = {
+    "1": "严重不合格",
+    "2": "较多问题",
+    "3": "基本可用",
+    "4": "较好但有轻微问题",
+    "5": "完全符合要求",
+}
+
+
+COMPLETE_BENCHMARK_MARKDOWN = """# Benchmark 设计方案
+
+## 1. 评测任务概述
+测试
+## 2. 目标用户与使用场景
+测试
+## 3. 评测目标
+测试
+## 4. Benchmark 样本设计
+测试
+## 5. 样本类型分布
+测试
+## 6. 难度分层
+测试
+## 7. 边界 Case 设计
+测试
+## 8. 高风险 Case 设计
+测试
+## 9. 推荐评测指标
+测试
+## 10. Rubric 对齐关系
+测试
+## 11. 标注与评测方式建议
+测试
+## 12. Baseline 设计
+测试
+## 13. 通过标准建议
+测试
+## 14. 失败归因标签
+测试
+## 15. 本地校验建议
+测试
+## 16. 当前 Benchmark 的适用边界
+测试
+## 17. 下一步优化方向
+测试
+"""
 
 
 def test_extracts_plain_json() -> None:
@@ -98,7 +147,13 @@ def test_coerces_chinese_rubric_fields_from_doubao_style_output() -> None:
                 "权重": "60%",
                 "正向样例": ["商品边缘清楚且细节完整"],
                 "负向样例": ["商品主体严重模糊"],
-                "评分标准": {"1": "主体不可辨认", "5": "主体完全清晰"},
+                "评分标准": {
+                    "1": "主体不可辨认",
+                    "2": "主体大部分模糊",
+                    "3": "主体基本可辨",
+                    "4": "主体清晰但细节略弱",
+                    "5": "主体完全清晰",
+                },
             },
             {
                 "维度名称": "构图合理性",
@@ -106,7 +161,13 @@ def test_coerces_chinese_rubric_fields_from_doubao_style_output() -> None:
                 "权重": 0.4,
                 "正例": "主体居中且留白合理",
                 "反例": "主体被裁切",
-                "打分说明": ["构图严重错误", "基本可用", "构图优秀"],
+                "打分说明": [
+                    "构图严重错误",
+                    "构图存在明显问题",
+                    "基本可用",
+                    "构图较好",
+                    "构图优秀",
+                ],
             },
         ],
     }
@@ -131,7 +192,7 @@ def test_coerces_rubric_list_wrapper() -> None:
                 "weight": 1,
                 "positive_example": "结论与事实一致",
                 "negative_example": "结论错误",
-                "scoring_guide": {"1": "错误", "5": "正确"},
+                "scoring_guide": FULL_SCORE_GUIDE,
             }
         ]
     }
@@ -155,7 +216,7 @@ def test_generate_rubric_with_openai_compatible_response(monkeypatch) -> None:
                 "weight": 1.0,
                 "positive_examples": ["退款政策说明正确"],
                 "negative_examples": ["退款政策说明错误"],
-                "scoring_guide": {"1": "错误", "5": "正确"},
+                "scoring_guide": FULL_SCORE_GUIDE,
             }
         ],
     }
@@ -207,7 +268,7 @@ def test_generate_rubric_disables_thinking_for_volcengine(monkeypatch) -> None:
                 "weight": 1.0,
                 "positive_examples": ["主体清楚"],
                 "negative_examples": ["主体模糊"],
-                "scoring_guide": {"1": "模糊", "5": "清晰"},
+                "scoring_guide": FULL_SCORE_GUIDE,
             }
         ],
     }
@@ -264,7 +325,7 @@ def test_benchmark_prompt_contains_required_sections_and_policy_guard() -> None:
                     "weight": 1.0,
                     "positive_examples": ["信息正确"],
                     "negative_examples": ["信息错误"],
-                    "scoring_guide": {"1": "错误", "5": "正确"},
+                    "scoring_guide": FULL_SCORE_GUIDE,
                 }
             ],
         }
@@ -292,6 +353,39 @@ def test_benchmark_prompt_contains_required_sections_and_policy_guard() -> None:
     assert "即创" not in prompt
 
 
+def test_benchmark_validation_rejects_headings_only() -> None:
+    markdown = "# Benchmark 设计方案\n\n" + "\n".join(
+        f"## {index}. {title}"
+        for index, title in enumerate(llm.REQUIRED_BENCHMARK_SECTION_TITLES, start=1)
+    )
+
+    issues = validate_benchmark_markdown(markdown)
+
+    assert any("章节缺少正文" in issue for issue in issues)
+
+
+def test_benchmark_validation_rejects_single_blank_section() -> None:
+    sections = []
+    for index, title in enumerate(llm.REQUIRED_BENCHMARK_SECTION_TITLES, start=1):
+        body = "-   " if index == 7 else "- 有效正文"
+        sections.append(f"## {index}. {title}\n{body}")
+    markdown = "# Benchmark 设计方案\n\n" + "\n\n".join(sections)
+
+    issues = validate_benchmark_markdown(markdown)
+
+    assert issues == ["章节缺少正文：## 7. 边界 Case 设计"]
+
+
+def test_benchmark_validation_accepts_compact_body_with_subheadings() -> None:
+    sections = []
+    for index, title in enumerate(llm.REQUIRED_BENCHMARK_SECTION_TITLES, start=1):
+        body = "### 要点\n- 覆盖核心场景" if index == 4 else "- 有效正文"
+        sections.append(f"## {index}. {title}\n{body}")
+    markdown = "# Benchmark 设计方案\n\n" + "\n\n".join(sections)
+
+    assert validate_benchmark_markdown(markdown) == []
+
+
 def test_generate_benchmark_uses_ark_fast_mode(monkeypatch) -> None:
     captured = {}
 
@@ -300,9 +394,8 @@ def test_generate_benchmark_uses_ark_fast_mode(monkeypatch) -> None:
         return SimpleNamespace(
             choices=[
                 SimpleNamespace(
-                    message=SimpleNamespace(
-                        content="# Benchmark 设计方案\n\n## 1. 评测任务概述\n测试"
-                    )
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=COMPLETE_BENCHMARK_MARKDOWN),
                 )
             ]
         )
@@ -327,7 +420,7 @@ def test_generate_benchmark_uses_ark_fast_mode(monkeypatch) -> None:
                     "weight": 1.0,
                     "positive_examples": ["正确"],
                     "negative_examples": ["错误"],
-                    "scoring_guide": {"1": "错误", "5": "正确"},
+                    "scoring_guide": FULL_SCORE_GUIDE,
                 }
             ],
         }
@@ -349,5 +442,199 @@ def test_generate_benchmark_uses_ark_fast_mode(monkeypatch) -> None:
     )
 
     assert markdown.startswith("# Benchmark 设计方案")
+    assert "生成审计" in markdown
     assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
     assert captured["max_tokens"] == 5000
+
+
+def test_generate_benchmark_retries_length_truncation(monkeypatch) -> None:
+    prompts = []
+    responses = [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(content="# Benchmark 设计方案\n\n## 1. 评测任务概述\n半截"),
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=5000, total_tokens=5100),
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=COMPLETE_BENCHMARK_MARKDOWN),
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=80, completion_tokens=1200, total_tokens=1280),
+        ),
+    ]
+
+    def create(**kwargs):
+        prompts.append(kwargs["messages"][1]["content"])
+        return responses.pop(0)
+
+    monkeypatch.setattr(
+        llm,
+        "create_client",
+        lambda *_, **__: SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        ),
+    )
+    rubric = Rubric.model_validate(
+        {
+            "task_summary": "测试",
+            "dimensions": [
+                {
+                    "id": "D01",
+                    "name": "准确性",
+                    "description": "结论准确",
+                    "weight": 1.0,
+                    "positive_examples": ["正确"],
+                    "negative_examples": ["错误"],
+                    "scoring_guide": FULL_SCORE_GUIDE,
+                }
+            ],
+        }
+    )
+
+    markdown = llm.generate_benchmark(
+        api_key="test",
+        base_url="http://localhost/v1",
+        api_model="test-model",
+        timeout=120,
+        temperature=0.2,
+        task_description="评估回答",
+        model_type="文本模型",
+        evaluation_goal="确保质量",
+        domain="客服",
+        output_type="文本",
+        risk_level="中",
+        rubric=rubric,
+    )
+
+    assert len(prompts) == 2
+    assert "紧凑但完整" in prompts[1]
+    assert "第 1 次 finish_reason=length" in markdown
+    assert "第 2 次 finish_reason=stop" in markdown
+
+
+def test_generate_benchmark_retries_incomplete_sections(monkeypatch) -> None:
+    prompts = []
+    responses = [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content="# Benchmark 设计方案\n\n## 1. 评测任务概述\n太短"),
+                )
+            ],
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=COMPLETE_BENCHMARK_MARKDOWN),
+                )
+            ],
+        ),
+    ]
+
+    def create(**kwargs):
+        prompts.append(kwargs["messages"][1]["content"])
+        return responses.pop(0)
+
+    monkeypatch.setattr(
+        llm,
+        "create_client",
+        lambda *_, **__: SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        ),
+    )
+    rubric = Rubric.model_validate(
+        {
+            "task_summary": "测试",
+            "dimensions": [
+                {
+                    "id": "D01",
+                    "name": "准确性",
+                    "description": "结论准确",
+                    "weight": 1.0,
+                    "positive_examples": ["正确"],
+                    "negative_examples": ["错误"],
+                    "scoring_guide": FULL_SCORE_GUIDE,
+                }
+            ],
+        }
+    )
+
+    llm.generate_benchmark(
+        api_key="test",
+        base_url="http://localhost/v1",
+        api_model="test-model",
+        timeout=120,
+        temperature=0.2,
+        task_description="评估回答",
+        model_type="文本模型",
+        evaluation_goal="确保质量",
+        domain="客服",
+        output_type="文本",
+        risk_level="中",
+        rubric=rubric,
+    )
+
+    assert len(prompts) == 2
+    assert "紧凑但完整" in prompts[1]
+
+
+def test_generate_benchmark_rejects_repeated_truncation(monkeypatch) -> None:
+    def create(**_):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(content="# Benchmark 设计方案\n\n## 1. 评测任务概述\n半截"),
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=5000, total_tokens=5100),
+        )
+
+    monkeypatch.setattr(
+        llm,
+        "create_client",
+        lambda *_, **__: SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        ),
+    )
+    rubric = Rubric.model_validate(
+        {
+            "task_summary": "测试",
+            "dimensions": [
+                {
+                    "id": "D01",
+                    "name": "准确性",
+                    "description": "结论准确",
+                    "weight": 1.0,
+                    "positive_examples": ["正确"],
+                    "negative_examples": ["错误"],
+                    "scoring_guide": FULL_SCORE_GUIDE,
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Benchmark 生成未完成"):
+        llm.generate_benchmark(
+            api_key="test",
+            base_url="http://localhost/v1",
+            api_model="test-model",
+            timeout=120,
+            temperature=0.2,
+            task_description="评估回答",
+            model_type="文本模型",
+            evaluation_goal="确保质量",
+            domain="客服",
+            output_type="文本",
+            risk_level="中",
+            rubric=rubric,
+        )

@@ -69,6 +69,8 @@ GENERIC_TERMS = {
 
 DOMAIN_PROFILES = {
     "refund_customer_service": {
+        "label": "退款或售后",
+        "suggestion_terms": "订单、审核、凭证、到账时效或处理步骤",
         "triggers": {
             "退款",
             "退货",
@@ -291,6 +293,14 @@ def infer_domain_profile(context: str) -> Dict:
     return {}
 
 
+def domain_label(domain_profile: Dict) -> str:
+    return str(domain_profile.get("label") or "当前任务")
+
+
+def domain_suggestion_terms(domain_profile: Dict) -> str:
+    return str(domain_profile.get("suggestion_terms") or "任务中的关键对象、约束或处理步骤")
+
+
 def infer_dimension_profile(dimension: RubricDimension) -> Dict:
     context = f"{dimension.name} {dimension.description}"
     matched_profiles = [
@@ -471,13 +481,13 @@ def validate_examples(
                     action = "rewrite"
                     suggestion = (
                         f"样例涉及相邻业务：{'、'.join(adjacent_hits)}，"
-                        "建议补充与退款或售后流程的直接关系。"
+                        f"建议补充与{domain_label(domain_profile)}流程的直接关系。"
                     )
                 elif dimension_profile.get("generic") and len(domain_hits) < 2:
                     action = "rewrite"
                     suggestion = (
-                        "该样例能体现当前维度，但退款场景较弱。"
-                        "建议补充退款进度、拒绝原因、申请步骤或到账时效。"
+                        f"该样例能体现当前维度，但{domain_label(domain_profile)}场景较弱。"
+                        f"建议补充{domain_suggestion_terms(domain_profile)}。"
                     )
                 elif domain_hits and (dimension_hits or not dimension_profile):
                     action = "keep"
@@ -489,7 +499,7 @@ def validate_examples(
                     action = "rewrite"
                     suggestion = (
                         "方向符合当前维度，但任务场景不够明确。"
-                        "建议加入退款、订单、审核或到账等上下文。"
+                        f"建议加入{domain_suggestion_terms(domain_profile)}等上下文。"
                     )
                 else:
                     action = "rewrite"

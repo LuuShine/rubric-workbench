@@ -24,7 +24,9 @@ def make_rubric(weights=(0.5, 0.5), duplicate=False) -> Rubric:
                     "negative_examples": ["提供了错误的退款期限。"],
                     "scoring_guide": {
                         "1": "关键信息完全错误",
+                        "2": "关键信息多处错误",
                         "3": "主要结论正确但存在遗漏",
+                        "4": "主要结论正确且只有轻微瑕疵",
                         "5": "信息完整且准确",
                     },
                 },
@@ -41,7 +43,9 @@ def make_rubric(weights=(0.5, 0.5), duplicate=False) -> Rubric:
                     "negative_examples": ["表达混乱，用户无法理解。"],
                     "scoring_guide": {
                         "1": "难以理解",
+                        "2": "表达混乱且需要大量推断",
                         "3": "基本清楚",
+                        "4": "表达清楚但结构略有欠缺",
                         "5": "表达清晰且结构完整",
                     },
                 },
@@ -107,7 +111,13 @@ def test_refund_domain_terms_prevent_false_irrelevance_warning() -> None:
                         "在订单页点击申请退款并上传商品照片，等待审核。"
                     ],
                     "negative_examples": ["只给出结论，没有任何后续操作。"],
-                    "scoring_guide": {"1": "无法推进", "5": "可直接执行"},
+                    "scoring_guide": {
+                        "1": "无法推进",
+                        "2": "只提供模糊方向",
+                        "3": "提供部分步骤",
+                        "4": "步骤明确但缺少少量条件",
+                        "5": "可直接执行",
+                    },
                 }
             ],
         }
@@ -141,7 +151,13 @@ def test_generic_courtesy_example_is_suggested_for_scenario_rewrite() -> None:
                         "开头使用您好，结尾表达如有其他问题随时联系我们。"
                     ],
                     "negative_examples": ["使用你自己看规则啊等不耐烦表述。"],
-                    "scoring_guide": {"1": "态度恶劣", "5": "礼貌专业"},
+                    "scoring_guide": {
+                        "1": "态度恶劣",
+                        "2": "语气生硬",
+                        "3": "基本礼貌",
+                        "4": "礼貌且比较自然",
+                        "5": "礼貌专业",
+                    },
                 }
             ],
         }
@@ -174,7 +190,13 @@ def test_clearly_unrelated_example_is_suggested_for_deletion() -> None:
                     "weight": 1.0,
                     "positive_examples": ["进入个人资料页修改头像并保存。"],
                     "negative_examples": ["没有解释退款申请步骤。"],
-                    "scoring_guide": {"1": "无法推进", "5": "可以解决"},
+                    "scoring_guide": {
+                        "1": "无法推进",
+                        "2": "只给出含糊建议",
+                        "3": "给出部分步骤",
+                        "4": "步骤基本完整",
+                        "5": "可以解决",
+                    },
                 }
             ],
         }
